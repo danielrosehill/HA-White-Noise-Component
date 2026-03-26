@@ -178,6 +178,55 @@ export const cardStyles = css`
     fill: currentColor;
   }
 
+  .timer-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    padding: 0 4px;
+    flex-wrap: wrap;
+  }
+
+  .timer-presets {
+    display: flex;
+    gap: 6px;
+    flex: 1;
+  }
+
+  .timer-btn {
+    padding: 6px 10px;
+    border: 1px solid var(--divider-color, #e0e0e0);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--wn-text);
+    font-size: 0.8em;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: inherit;
+  }
+
+  .timer-btn:hover:not([disabled]) {
+    border-color: var(--wn-primary);
+  }
+
+  .timer-btn.active {
+    border-color: var(--wn-primary);
+    background: var(--wn-primary);
+    color: #fff;
+  }
+
+  .timer-btn[disabled] {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .timer-countdown {
+    font-size: 0.9em;
+    font-weight: 500;
+    color: var(--wn-primary);
+    font-variant-numeric: tabular-nums;
+  }
+
   .unavailable {
     text-align: center;
     padding: 16px;

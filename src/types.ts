@@ -9,7 +9,7 @@ export interface WhiteNoiseCardConfig {
   show_timer?: boolean;
 }
 
-export type NoiseType = 'white' | 'brown' | 'pink';
+export type NoiseType = 'white' | 'brown' | 'pink' | 'rain' | 'rain_combo';
 
 export interface CardState {
   noise_type: NoiseType;

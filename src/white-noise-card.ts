@@ -2,7 +2,7 @@ import { LitElement, html, nothing, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { cardStyles } from './styles';
 import { WhiteNoiseCardConfig, HomeAssistant, NoiseType } from './types';
-import { NOISE_TYPES, DEFAULT_NOISE, DEFAULT_VOLUME, CARD_VERSION, STORAGE_KEY_PREFIX } from './constants';
+import { NOISE_TYPES, DEFAULT_NOISE, DEFAULT_VOLUME, CARD_VERSION, STORAGE_KEY_PREFIX, TIMER_PRESETS } from './constants';
 import { AudioManager } from './audio-manager';
 
 console.info(
@@ -20,9 +20,15 @@ export class WhiteNoiseCard extends LitElement {
   @state() private _noiseType: NoiseType = DEFAULT_NOISE;
   @state() private _volume: number = DEFAULT_VOLUME;
   @state() private _isPlaying: boolean = false;
+  @state() private _timerMinutes: number = 0;
+  @state() private _timerRemaining: number = 0;
 
   private _audioManager = new AudioManager();
   private _volumeTimeout: ReturnType<typeof setTimeout> | null = null;
+  private _userActionTime: number = 0;
+  private _loopTimeout: ReturnType<typeof setTimeout> | null = null;
+  private _timerInterval: ReturnType<typeof setInterval> | null = null;
+  private _timerEndTime: number = 0;
 
   public setConfig(config: WhiteNoiseCardConfig): void {
     if (!config.entity) {
@@ -31,16 +37,14 @@ export class WhiteNoiseCard extends LitElement {
     this._config = config;
     this._audioManager.entity = config.entity;
 
-    // Apply defaults from config
     this._noiseType = config.default_noise ?? DEFAULT_NOISE;
     this._volume = config.default_volume ?? DEFAULT_VOLUME;
 
-    // Restore persisted state
     this._loadState();
   }
 
   public getCardSize(): number {
-    return 3;
+    return 4;
   }
 
   static getConfigElement(): HTMLElement {
@@ -54,6 +58,12 @@ export class WhiteNoiseCard extends LitElement {
     };
   }
 
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this._clearLoopTimeout();
+    this._clearTimer();
+  }
+
   protected updated(changedProps: PropertyValues): void {
     super.updated(changedProps);
 
@@ -65,16 +75,45 @@ export class WhiteNoiseCard extends LitElement {
 
   private _syncFromEntity(): void {
     const entityState = this._audioManager.getEntityState();
+    const recentAction = Date.now() - this._userActionTime < 10000;
 
     if (entityState === 'playing') {
       this._isPlaying = true;
-    } else if (entityState === 'idle' || entityState === 'off' || entityState === 'paused') {
+    } else if (!recentAction && (entityState === 'idle' || entityState === 'off' || entityState === 'paused')) {
       this._isPlaying = false;
     }
 
-    const entityVolume = this._audioManager.getEntityVolume();
-    if (entityVolume !== null && !this._volumeTimeout) {
-      this._volume = entityVolume;
+    // Re-trigger loop: if we think we're playing but entity went idle, replay
+    if (this._isPlaying && !recentAction && entityState === 'idle') {
+      this._scheduleLoop();
+    }
+
+    // Don't sync volume from entity — the card's local slider is the source of truth.
+    // MA's play_announcement can override speaker volume unpredictably.
+  }
+
+  private _scheduleLoop(): void {
+    if (this._loopTimeout) return;
+    console.log('[white-noise-card] Scheduling loop replay');
+    this._loopTimeout = setTimeout(async () => {
+      this._loopTimeout = null;
+      if (this._isPlaying) {
+        this._userActionTime = Date.now();
+        try {
+          await this._audioManager.play(this._noiseType);
+          await this._audioManager.setVolume(this._volume);
+          console.log('[white-noise-card] Loop replay triggered');
+        } catch (err) {
+          console.error('[white-noise-card] Loop replay failed:', err);
+        }
+      }
+    }, 2000);
+  }
+
+  private _clearLoopTimeout(): void {
+    if (this._loopTimeout) {
+      clearTimeout(this._loopTimeout);
+      this._loopTimeout = null;
     }
   }
 
@@ -114,25 +153,39 @@ export class WhiteNoiseCard extends LitElement {
     this._saveState();
 
     if (this._isPlaying) {
+      this._userActionTime = Date.now();
       await this._audioManager.play(noiseType);
     }
   }
 
   private async _handlePlayPause(): Promise<void> {
     if (this._isPlaying) {
-      await this._audioManager.stop();
-      this._isPlaying = false;
+      await this._stopPlayback();
     } else {
-      await this._audioManager.setVolume(this._volume);
-      await this._audioManager.play(this._noiseType);
-      this._isPlaying = true;
+      try {
+        await this._audioManager.setVolume(this._volume);
+        await this._audioManager.play(this._noiseType);
+        this._isPlaying = true;
+        this._userActionTime = Date.now();
+      } catch (err) {
+        console.error('[white-noise-card] Play failed:', err);
+        this._isPlaying = false;
+      }
     }
     this._saveState();
   }
 
-  private async _handleStop(): Promise<void> {
+  private async _stopPlayback(): Promise<void> {
+    this._clearLoopTimeout();
+    this._clearTimer();
     await this._audioManager.stop();
     this._isPlaying = false;
+    this._timerMinutes = 0;
+    this._timerRemaining = 0;
+  }
+
+  private async _handleStop(): Promise<void> {
+    await this._stopPlayback();
   }
 
   private _handleVolumeChange(e: Event): void {
@@ -140,12 +193,50 @@ export class WhiteNoiseCard extends LitElement {
     this._volume = parseInt(target.value, 10);
     this._saveState();
 
-    // Debounce volume changes to avoid flooding HA
     if (this._volumeTimeout) clearTimeout(this._volumeTimeout);
     this._volumeTimeout = setTimeout(async () => {
       await this._audioManager.setVolume(this._volume);
       this._volumeTimeout = null;
     }, 150);
+  }
+
+  private _handleTimerSelect(minutes: number): void {
+    this._clearTimer();
+    this._timerMinutes = minutes;
+
+    if (minutes === 0) {
+      this._timerRemaining = 0;
+      return;
+    }
+
+    this._timerEndTime = Date.now() + minutes * 60 * 1000;
+    this._timerRemaining = minutes * 60;
+
+    this._timerInterval = setInterval(() => {
+      const remaining = Math.max(0, Math.round((this._timerEndTime - Date.now()) / 1000));
+      this._timerRemaining = remaining;
+
+      if (remaining <= 0) {
+        this._stopPlayback();
+      }
+    }, 1000);
+  }
+
+  private _clearTimer(): void {
+    if (this._timerInterval) {
+      clearInterval(this._timerInterval);
+      this._timerInterval = null;
+    }
+  }
+
+  private _formatTime(totalSeconds: number): string {
+    const hours = Math.floor(totalSeconds / 3600);
+    const mins = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+    if (hours > 0) {
+      return `${hours}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+    return `${mins}:${String(secs).padStart(2, '0')}`;
   }
 
   protected render() {
@@ -171,7 +262,7 @@ export class WhiteNoiseCard extends LitElement {
       <ha-card>
         <div class="header">
           <span class="name">${name}</span>
-          <span class="status">${entityState}</span>
+          <span class="status">${this._isPlaying ? 'playing' : entityState}</span>
         </div>
 
         <div class="noise-selector">
@@ -197,6 +288,26 @@ export class WhiteNoiseCard extends LitElement {
             @input=${this._handleVolumeChange}
           />
           <span class="volume-value">${this._volume}%</span>
+        </div>
+
+        <div class="timer-container">
+          <span class="label">Timer</span>
+          <div class="timer-presets">
+            ${TIMER_PRESETS.map(
+              (preset) => html`
+                <button
+                  class="timer-btn ${this._timerMinutes === preset.minutes ? 'active' : ''}"
+                  @click=${() => this._handleTimerSelect(preset.minutes)}
+                  ?disabled=${!this._isPlaying && preset.minutes > 0}
+                >
+                  ${preset.label}
+                </button>
+              `
+            )}
+          </div>
+          ${this._timerRemaining > 0
+            ? html`<span class="timer-countdown">${this._formatTime(this._timerRemaining)}</span>`
+            : nothing}
         </div>
 
         <div class="controls">
