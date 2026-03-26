@@ -1,0 +1,33 @@
+{
+  "name": "ha-white-noise-card",
+  "version": "1.0.0",
+  "description": "Home Assistant Lovelace card for white noise playback on connected speakers",
+  "main": "dist/white-noise-card.js",
+  "scripts": {
+    "build": "rollup -c",
+    "watch": "rollup -c --watch",
+    "lint": "eslint src/",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "home-assistant",
+    "lovelace",
+    "custom-card",
+    "white-noise",
+    "hacs"
+  ],
+  "author": "Daniel Rosehill",
+  "license": "MIT",
+  "devDependencies": {
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-terser": "^0.4.4",
+    "@rollup/plugin-typescript": "^11.1.6",
+    "lit": "^3.1.2",
+    "rollup": "^4.12.0",
+    "tslib": "^2.6.2",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "home-assistant-js-websocket": "^9.4.0"
+  }
+}
