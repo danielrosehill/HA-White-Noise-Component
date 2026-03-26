@@ -1,5 +1,7 @@
 # HA White Noise Card
 
+![White Noise Card Screenshot](screenshots/image.png)
+
 A custom Home Assistant Lovelace card that turns any `media_player` speaker into a white noise machine. Designed for nurseries, bedrooms, or anywhere you want ambient noise control from your HA dashboard.
 
 ## Features
@@ -126,6 +128,6 @@ When deploying updates to HA without a full restart, the browser may cache the o
 
 ## Documentation
 
-- [PROJECT_SPEC.md](PROJECT_SPEC.md) -- High-level overview and feature summary
-- [DEVELOPMENT_SPEC.md](DEVELOPMENT_SPEC.md) -- Detailed technical specification
-- [notes/](notes/) -- Voice notes and planning recordings
+- [PROJECT_SPEC.md](docs/PROJECT_SPEC.md) -- High-level overview and feature summary
+- [DEVELOPMENT_SPEC.md](docs/DEVELOPMENT_SPEC.md) -- Detailed technical specification
+- [notes/](docs/notes/) -- Voice notes and planning recordings
